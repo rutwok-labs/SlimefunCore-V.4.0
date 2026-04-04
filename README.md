@@ -71,13 +71,19 @@ The original project started in **2013** and has grown into a large community pr
 - You are allowed to modify and share it, **but you must give proper credit** and keep the same license.
 
 **Original Project**  
-Author: Slimefun Team  
+Creator & Builder: **[TheBusyBiscuit](https://github.com/TheBusyBiscuit)**  
+
+![TheBusyBiscuit](https://avatars.githubusercontent.com/u/3967898?v=4)
+
+**TheBusyBiscuit** · he/him  
+Original Project Team: **Slimefun Team**  
 Repository: [https://github.com/Slimefun/Slimefun4](https://github.com/Slimefun/Slimefun4)
 
 ---
 
 ## :handshake: Credits
-- **Original Project**: Slimefun Team
+- **Original Project Creator**: **[TheBusyBiscuit](https://github.com/TheBusyBiscuit)**
+- **Original Project Team**: Slimefun Team
 - **Modified & Updated by**: **R2Ksanu**
 - **Screenshots**: Courtesy of the original Slimefun community
 
