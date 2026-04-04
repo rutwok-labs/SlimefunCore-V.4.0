@@ -24,8 +24,7 @@ Slimefun is a plugin which turns your Minecraft server into a **modpack without 
 ---
 
 ## :floppy_disk: Download
-**Add your latest plugin download link here**  
-*(Coming Soon: [Download Slimefun 4.9-UNOFFICIAL](https://your-download-link-here))*
+**Download Link**: [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
 
 > **Note**: This is an **unofficial fork**. Always test on a backup server before using on production.
 
