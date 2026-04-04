@@ -23,6 +23,20 @@ Slimefun is a plugin which turns your Minecraft server into a **modpack without 
 
 ---
 
+## :rocket: Future Update
+Upcoming **Slimefun community addons** will also be updated for **Minecraft 1.21.11** to work together with this main core build.
+
+The goal is to keep the wider Slimefun addon ecosystem usable on modern **Purpur/Paper 1.21.11** servers.
+
+## :package: Updated Addons
+
+| Addon | Status | Notes |
+|-------|--------|-------|
+| Community Addons | :hourglass_flowing_sand: Upcoming | Planned compatibility updates for `1.21.11` |
+| Main Slimefun Core | :white_check_mark: Updated | Working on `Purpur/Paper 1.21.11` |
+
+---
+
 ## :floppy_disk: Download
 **Download Link**: [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
 
