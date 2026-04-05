@@ -20,6 +20,8 @@
     <properties>
         <!-- UTF-8 is our standard encoding for source files -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Compatibility: use a timestamp build number so every packaged jar gets a unique SlimefunCore4-* name. -->
+        <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
 
         <!-- Target Java 21 -->
         <maven.compiler.source>21</maven.compiler.source>
@@ -110,8 +112,8 @@
         <!-- The default goal for compiling is "clean package" -->
         <defaultGoal>clean package</defaultGoal>
 
-        <!-- The name of the final jar -->
-        <finalName>${project.name} v${project.version}</finalName>
+        <!-- Compatibility: publish builds under the custom SlimefunCore4-* naming scheme. -->
+        <finalName>SlimefunCore4-${maven.build.timestamp}</finalName>
 
         <plugins>
             <plugin>
