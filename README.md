@@ -29,7 +29,7 @@ Upcoming **Slimefun community addons** will also be updated for **Minecraft 1.21
 The goal is to keep the wider Slimefun addon ecosystem usable on modern **Purpur/Paper 1.21.11** servers.
 
 ## :package: Updated Addons
-
+## **URL** :https://github.com/rutwok-labs/SF4-Addons
 | Addon | Status | Notes |
 |-------|--------|-------|
 | Community Addons | :hourglass_flowing_sand: Upcoming | Planned compatibility updates for `1.21.11` |
