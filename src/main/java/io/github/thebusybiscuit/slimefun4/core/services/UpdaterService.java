@@ -1,10 +1,24 @@
 package io.github.thebusybiscuit.slimefun4.core.services;
 
 import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import io.github.bakedlibs.dough.updater.BlobBuildUpdater;
 import org.bukkit.plugin.Plugin;
@@ -17,18 +31,31 @@ import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 
 /**
  * This Class represents our {@link PluginUpdater} Service.
- * If enabled, it will automatically connect to https://blob.build/
- * to check for updates and to download them automatically.
+ * Official builds use blob.build for auto-download updates.
+ * Unofficial builds only perform a safe GitHub release notification check.
  *
  * @author TheBusyBiscuit
  *
  */
 public class UpdaterService {
 
+    private static final String CUSTOM_RELEASE_REPOSITORY = "rutwok-labs/SlimefunCore-V.4.0";
+    private static final URI CUSTOM_RELEASES_LATEST = URI.create("https://github.com/" + CUSTOM_RELEASE_REPOSITORY + "/releases/latest");
+    private static final String USER_AGENT = "SlimefunCoreV4.0-Updater";
+    private static final DateTimeFormatter BUILD_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final Pattern BUILD_TIMESTAMP_PATTERN = Pattern.compile("(\\d{14})(?=\\.jar$)");
+    private static final Pattern RELEASE_DATETIME_PATTERN = Pattern.compile("datetime=\"([^\"]+)\"");
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
+
     /**
      * Our {@link Slimefun} instance.
      */
     private final Slimefun plugin;
+
+    /**
+     * The current plugin jar file so unofficial builds can derive their local build number.
+     */
+    private final File pluginFile;
 
     /**
      * Our {@link PluginUpdater} implementation.
@@ -54,6 +81,7 @@ public class UpdaterService {
      */
     public UpdaterService(@Nonnull Slimefun plugin, @Nonnull String version, @Nonnull File file) {
         this.plugin = plugin;
+        this.pluginFile = file;
         BlobBuildUpdater autoUpdater = null;
 
         if (version.contains("UNOFFICIAL")) {
@@ -136,7 +164,7 @@ public class UpdaterService {
 
     /**
      * This will start the {@link UpdaterService} and check for updates.
-     * If it can find an update it will automatically be installed.
+     * Official builds auto-download updates, unofficial builds only log newer releases.
      */
     public void start() {
         if (updater != null) {
@@ -144,9 +172,11 @@ public class UpdaterService {
         } else {
             printBorder();
             plugin.getLogger().log(Level.WARNING, "It looks like you are using an unofficially modified build of Slimefun!");
-            plugin.getLogger().log(Level.WARNING, "Auto-Updates have been disabled, this build is not considered safe.");
+            plugin.getLogger().log(Level.WARNING, "Auto-Downloads have been disabled, this build is not considered safe.");
+            plugin.getLogger().log(Level.WARNING, "GitHub release notifications remain enabled for unofficial builds.");
             plugin.getLogger().log(Level.WARNING, "Do not report bugs encountered in this Version of Slimefun to any official sources.");
             printBorder();
+            checkCustomReleaseAsync();
         }
     }
 
@@ -180,5 +210,79 @@ public class UpdaterService {
     private void printBorder() {
         plugin.getLogger().log(Level.WARNING, "#######################################################");
     }
+
+    /**
+     * Compatibility note: unofficial builds now perform a release-notification check
+     * against the custom GitHub repository instead of attempting an auto-download.
+     */
+    private void checkCustomReleaseAsync() {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, this::checkCustomRelease);
+    }
+
+    private void checkCustomRelease() {
+        try {
+            ReleaseInfo latestRelease = fetchLatestCustomRelease();
+            Instant currentBuild = parseBuildInstant(pluginFile.getName());
+
+            if (currentBuild == null || latestRelease == null || !latestRelease.publishedAt().isAfter(currentBuild)) {
+                return;
+            }
+
+            printBorder();
+            plugin.getLogger().log(Level.WARNING, "A newer SlimefunCore release is available on GitHub.");
+            plugin.getLogger().log(Level.WARNING, "Current build: {0}", pluginFile.getName());
+            plugin.getLogger().log(Level.WARNING, "Latest tag: {0}", latestRelease.tag());
+            plugin.getLogger().log(Level.WARNING, "Published: {0}", LocalDateTime.ofInstant(latestRelease.publishedAt(), ZoneId.systemDefault()));
+            plugin.getLogger().log(Level.WARNING, "Download: {0}", latestRelease.url());
+            printBorder();
+        } catch (IOException | InterruptedException x) {
+            plugin.getLogger().log(Level.WARNING, "Failed to check unofficial GitHub releases: " + x.getMessage());
+
+            if (x instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private @Nullable ReleaseInfo fetchLatestCustomRelease() throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(CUSTOM_RELEASES_LATEST)
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/html")
+            .GET()
+            .build();
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+        if (response.statusCode() >= 400) {
+            return null;
+        }
+
+        Matcher matcher = RELEASE_DATETIME_PATTERN.matcher(response.body());
+
+        if (!matcher.find()) {
+            return null;
+        }
+
+        Instant publishedAt = Instant.parse(matcher.group(1));
+        String path = response.uri().getPath();
+        String tag = path.substring(path.lastIndexOf('/') + 1);
+        return new ReleaseInfo(tag, response.uri().toString(), publishedAt);
+    }
+
+    private @Nullable Instant parseBuildInstant(@Nonnull String fileName) {
+        Matcher matcher = BUILD_TIMESTAMP_PATTERN.matcher(fileName);
+
+        if (!matcher.find()) {
+            return null;
+        }
+
+        try {
+            LocalDateTime timestamp = LocalDateTime.parse(matcher.group(1), BUILD_TIMESTAMP_FORMATTER);
+            return timestamp.atZone(ZoneId.systemDefault()).toInstant();
+        } catch (DateTimeParseException x) {
+            return null;
+        }
+    }
+
+    private record ReleaseInfo(@Nonnull String tag, @Nonnull String url, @Nonnull Instant publishedAt) {}
 
 }

@@ -42,7 +42,7 @@ class VersionsCommand extends SubCommand {
      * This is the notice that will be displayed when an
      * older version of Java is detected.
      */
-    private static final String JAVA_VERSION_NOTICE = "Paper 1.21.5-1.21.11 support requires Java 21.";
+    private static final String JAVA_VERSION_NOTICE = "Paper 1.21.1-1.21.11 support requires Java 21.";
 
     @ParametersAreNonnullByDefault
     VersionsCommand(Slimefun plugin, SlimefunCommand cmd) {
@@ -88,7 +88,7 @@ class VersionsCommand extends SubCommand {
 
             if (Slimefun.getMetricsService().getVersion() != null) {
                 // @formatter:off
-                builder.append("Metrics-Module ")
+                builder.append("bStats ")
                     .color(ChatColor.GREEN)
                     .append("#" + Slimefun.getMetricsService().getVersion() + '\n')
                     .color(ChatColor.DARK_GREEN);

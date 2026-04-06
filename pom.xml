@@ -4,12 +4,12 @@
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.github.slimefun</groupId>
-    <artifactId>Slimefun</artifactId>
+    <groupId>com.github.SlimefunCoreV4.0</groupId>
+    <artifactId>SlimefunCoreV4.0</artifactId>
 
     <!-- Our default version will be UNOFFICIAL, this will prevent auto updates -->
     <!-- from overriding our local test file -->
-    <version>4.9-UNOFFICIAL</version>
+    <version>4.0-UNOFFICIAL</version>
     <inceptionYear>2013</inceptionYear>
     <packaging>jar</packaging>
 
@@ -20,8 +20,10 @@
     <properties>
         <!-- UTF-8 is our standard encoding for source files -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Compatibility: use a timestamp build number so every packaged jar gets a unique SlimefunCore4-* name. -->
-        <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
+        <!-- Compatibility: use a stable per-build session stamp for the short YYNN build-number generator. -->
+        <maven.build.timestamp.format>yyyyMMddHHmmssSSS</maven.build.timestamp.format>
+        <!-- Compatibility: jar names use a short YYNN build number such as 2601. -->
+        <short.build.number>2600</short.build.number>
 
         <!-- Target Java 21 -->
         <maven.compiler.source>21</maven.compiler.source>
@@ -112,8 +114,8 @@
         <!-- The default goal for compiling is "clean package" -->
         <defaultGoal>clean package</defaultGoal>
 
-        <!-- Compatibility: publish builds under the custom SlimefunCore4-* naming scheme. -->
-        <finalName>SlimefunCore4-${maven.build.timestamp}</finalName>
+        <!-- Compatibility: package to a stable temporary name and rename to YYNN after shading. -->
+        <finalName>SlimefunCore4-build</finalName>
 
         <plugins>
             <plugin>
@@ -129,6 +131,57 @@
                         <exclude>**/package-info.java</exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <!-- Compatibility: update the short YYNN build number before packaging. -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+
+                <executions>
+                    <execution>
+                        <id>update-short-build-number</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>powershell</executable>
+                            <arguments>
+                                <argument>-NoProfile</argument>
+                                <argument>-ExecutionPolicy</argument>
+                                <argument>Bypass</argument>
+                                <argument>-File</argument>
+                                <argument>${project.basedir}/build-tools/update-build-number.ps1</argument>
+                                <argument>${project.basedir}/.mvn/build-number.properties</argument>
+                                <argument>${maven.build.timestamp}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Compatibility: load the generated YYNN build number into Maven properties. -->
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>properties-maven-plugin</artifactId>
+                <version>1.2.1</version>
+
+                <executions>
+                    <execution>
+                        <id>load-short-build-number</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>read-project-properties</goal>
+                        </goals>
+                        <configuration>
+                            <files>
+                                <file>${project.basedir}/.mvn/build-number.properties</file>
+                            </files>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
@@ -206,6 +259,10 @@
                             <shadedPattern>io.github.thebusybiscuit.slimefun4.libraries.dough</shadedPattern>
                         </relocation>
                         <relocation>
+                            <pattern>org.bstats</pattern>
+                            <shadedPattern>io.github.thebusybiscuit.slimefun4.libraries.bstats</shadedPattern>
+                        </relocation>
+                        <relocation>
                             <pattern>io.papermc.lib</pattern>
                             <shadedPattern>io.github.thebusybiscuit.slimefun4.libraries.paperlib</shadedPattern>
                         </relocation>
@@ -232,6 +289,30 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Compatibility: rename final artifacts to the short YYNN build number. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+
+                <executions>
+                    <execution>
+                        <id>rename-short-build-artifacts</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <property file="${project.basedir}/.mvn/build-number.properties" />
+                                <move file="${project.build.directory}/SlimefunCore4-build.jar" tofile="${project.build.directory}/SlimefunCore4-${generated.short.build.number}.jar" overwrite="true" />
+                                <move file="${project.build.directory}/SlimefunCore4-build-sources.jar" tofile="${project.build.directory}/SlimefunCore4-${generated.short.build.number}-sources.jar" overwrite="true" />
+                            </target>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -364,15 +445,15 @@
             <scope>compile</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.Slimefun.dough</groupId>
-            <artifactId>dough-api</artifactId>
-            <version>cb22e71335</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
             <groupId>io.papermc</groupId>
             <artifactId>paperlib</artifactId>
             <version>1.0.8</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bstats</groupId>
+            <artifactId>bstats-bukkit</artifactId>
+            <version>3.2.1</version>
             <scope>compile</scope>
         </dependency>
 

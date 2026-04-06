@@ -66,7 +66,7 @@ final class StartupWarnings {
         logger.log(Level.WARNING, PREFIX);
         logger.log(Level.WARNING, PREFIX + "We recommend you to update to Java {0}.", recommendedJavaVersion);
         logger.log(Level.WARNING, PREFIX + "Java {0} is required for the supported", recommendedJavaVersion);
-        logger.log(Level.WARNING, PREFIX + "Paper 1.21.5-1.21.11 compatibility range.");
+        logger.log(Level.WARNING, PREFIX + "Paper 1.21.1-1.21.11 compatibility range.");
         logger.log(Level.WARNING, PREFIX + "Please update before reporting startup or");
         logger.log(Level.WARNING, PREFIX + "runtime issues with this build of Slimefun.");
         logger.log(Level.WARNING, BORDER);

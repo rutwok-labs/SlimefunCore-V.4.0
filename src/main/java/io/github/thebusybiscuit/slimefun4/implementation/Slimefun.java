@@ -317,8 +317,8 @@ public class Slimefun extends JavaPlugin implements SlimefunAddon {
         playerStorage = new LegacyStorage();
         logger.log(Level.INFO, "Using legacy storage for player data");
 
-        // Setting up bStats and analytics
-        new Thread(metricsService::start, "Slimefun Metrics").start();
+        // Compatibility note: embedded bStats now starts directly from the plugin jar instead of downloading an external module.
+        metricsService.start();
         analyticsService.start();
 
         // Starting the Auto-Updater

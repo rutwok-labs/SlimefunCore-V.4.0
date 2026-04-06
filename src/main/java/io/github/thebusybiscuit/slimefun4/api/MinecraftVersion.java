@@ -59,7 +59,7 @@ public enum MinecraftVersion {
      * This constant represents the supported Minecraft (Java Edition)
      * 1.21 patch range for this build of Slimefun.
      */
-    MINECRAFT_1_21(21, 5, 11, "1.21.5-1.21.11"),
+    MINECRAFT_1_21(21, 1, 11, "1.21.1-1.21.11"),
 
     /**
      * This constant represents an exceptional state in which we were unable
