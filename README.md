@@ -6,13 +6,13 @@
 
 Slimefun is a plugin which turns your Minecraft server into a **modpack without installing mods**. It adds a huge amount of content including advanced technology, powerful magic, machines, and full automation systems.
 
-**This is an unofficial modified version** of the original project, maintained and updated by **R2Ksanu**.
+_**This is an unofficial modified version** of the original project, maintained and updated by **R2Ksanu**._
 
-> **Original Repository**: [https://github.com/Slimefun/Slimefun4](https://github.com/Slimefun/Slimefun4)
+>** **Original Repository**: [https://github.com/Slimefun/Slimefun4](https://github.com/Slimefun/Slimefun4)**
 
 ---
 
-## :rocket: Status Update
+## Status Update
 - **Original version**: 1.19.4
 - **Updated to**: **1.21.11**
 - **Compatibility**: :white_check_mark: **Working**
@@ -23,37 +23,41 @@ Slimefun is a plugin which turns your Minecraft server into a **modpack without 
 
 ---
 
-## :rocket: Future Update
+## Future Update
 Upcoming **Slimefun community addons** will also be updated for **Minecraft 1.21.11** to work together with this main core build.
 
 The goal is to keep the wider Slimefun addon ecosystem usable on modern **Purpur/Paper 1.21.11** servers.
 
-## :package: Updated Addons
-## **URL** :https://github.com/rutwok-labs/SF4-Addons
+## Updated Addons
+**Addon Repo**:
+```
+https://github.com/rutwok-labs/SF4-Addons
+```
+
 | Addon | Status | Notes |
 |-------|--------|-------|
-| Community Addons | :hourglass_flowing_sand: Upcoming | Planned compatibility updates for `1.21.11` |
-| Main Slimefun Core | :white_check_mark: Updated | Working on `Purpur/Paper 1.21.11` |
+| Community Addons | ⏳__ Upcoming | Planned compatibility updates for `1.21.11` |
+| Main Slimefun Core | ✅ Updated | Working on `Purpur/Paper 1.21.11` |
 
 ---
 
-## :floppy_disk: Download
-**Download Link**: [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
+## Download
+🔗 **Link** : [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
 
 > **Note**: This is an **unofficial fork**. Always test on a backup server before using on production.
 
 ---
 
-## :framed_picture: Screenshots
+## Screenshots
 *(Reused from the original project – showcasing the power of Slimefun)*
 
 | Reactors & Electricity | Awesome Factories | Magic & Altars |
 |------------------------|-------------------|----------------|
-| ![](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase1.png) | ![](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase6.png) | ![](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase5.png) |
+| ![Reactors and electricity showcase](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase1.png) | ![Factory automation showcase](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase6.png) | ![Magic and altar showcase](https://raw.githubusercontent.com/Slimefun/Slimefun-Wiki/master/images/showcase5.png) |
 
 ---
 
-## :sparkles: What is Slimefun?
+## ✨ What is Slimefun?
 Slimefun adds:
 
 - **Advanced technology systems**
@@ -67,16 +71,15 @@ The original project started in **2013** and has grown into a large community pr
 
 ---
 
-## :quick: Quick Navigation
-- **[:floppy_disk: Download](#floppy_disk-download)**
-- **[:framed_picture: Screenshots](#framed_picture-screenshots)**
-- **[:beetle: Bug Reports & Feedback](https://github.com/R2Ksanu/Slimefun-4.9-UNOFFICIAL/issues)**
-- **[:open_book: Original Wiki](https://github.com/Slimefun/Slimefun4/wiki)**
-- **[:heart: Original Project](https://github.com/Slimefun/Slimefun4)**
+##  🧭 Quick Navigation
+- **[🖼️ Screenshots](#framed_picture-screenshots)**
+- **[🐞 Bug Reports & Feedback](https://github.com/rutwok-labs/SlimefunCore-V.4.0/issues)**
+- **[📖 Original Wiki](https://github.com/Slimefun/Slimefun4/wiki)**
+- **[❤️ Original Project](https://github.com/Slimefun/Slimefun4)**
 
 ---
 
-## :warning: Important Disclaimer
+## ⚠️ Important Disclaimer
 **This is an unofficial fork and is not affiliated with the original Slimefun developers or team.**
 
 - All credits go to the original **Slimefun Team**.
@@ -86,7 +89,7 @@ The original project started in **2013** and has grown into a large community pr
 **Original Project**  
 Creator & Builder: **[TheBusyBiscuit](https://github.com/TheBusyBiscuit)**  
 
-![TheBusyBiscuit](https://avatars.githubusercontent.com/u/3967898?v=4)
+![TheBusyBiscuit avatar](https://avatars.githubusercontent.com/u/3967898?v=4)
 
 **TheBusyBiscuit** · he/him  
 Original Project Team: **Slimefun Team**  
@@ -94,7 +97,7 @@ Repository: [https://github.com/Slimefun/Slimefun4](https://github.com/Slimefun/
 
 ---
 
-## :handshake: Credits
+## 🤝🏻 Credits
 - **Original Project Creator**: **[TheBusyBiscuit](https://github.com/TheBusyBiscuit)**
 - **Original Project Team**: Slimefun Team
 - **Modified & Updated by**: **R2Ksanu**
@@ -102,7 +105,7 @@ Repository: [https://github.com/Slimefun/Slimefun4](https://github.com/Slimefun/
 
 ---
 
-## :page_facing_up: License
+## 📄 License
 This project follows the **GNU GPLv3 License**.  
 See [LICENSE](LICENSE) for details.
 
