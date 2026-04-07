@@ -1,4 +1,4 @@
-# Slimefun 4.9-UNOFFICIAL
+# Slimefun 4.0-UNOFFICIAL
 **Modified Version**  
 ![Slimefun](https://img.shields.io/badge/Minecraft-1.21.11-62b47a?style=for-the-badge&logo=minecraft) 
 ![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge&logo=java) 
