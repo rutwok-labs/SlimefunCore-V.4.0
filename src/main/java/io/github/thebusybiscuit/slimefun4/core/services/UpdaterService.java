@@ -6,12 +6,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
@@ -40,11 +39,13 @@ import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 public class UpdaterService {
 
     private static final String CUSTOM_RELEASE_REPOSITORY = "rutwok-labs/SlimefunCore-V.4.0";
-    private static final URI CUSTOM_RELEASES_LATEST = URI.create("https://github.com/" + CUSTOM_RELEASE_REPOSITORY + "/releases/latest");
+    private static final URI CUSTOM_RELEASES_LATEST = URI.create("https://api.github.com/repos/" + CUSTOM_RELEASE_REPOSITORY + "/releases/latest");
     private static final String USER_AGENT = "SlimefunCoreV4.0-Updater";
-    private static final DateTimeFormatter BUILD_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final Pattern BUILD_TIMESTAMP_PATTERN = Pattern.compile("(\\d{14})(?=\\.jar$)");
-    private static final Pattern RELEASE_DATETIME_PATTERN = Pattern.compile("datetime=\"([^\"]+)\"");
+    private static final Pattern BUILD_NUMBER_PATTERN = Pattern.compile("(\\d{4})(?=\\.jar$)");
+    private static final Pattern TAG_NAME_PATTERN = Pattern.compile("\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern HTML_URL_PATTERN = Pattern.compile("\"html_url\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern PUBLISHED_AT_PATTERN = Pattern.compile("\"published_at\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern ASSET_PATTERN = Pattern.compile("\\{[^\\{\\}]*\"name\"\\s*:\\s*\"([^\"]+)\"[^\\{\\}]*\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"[^\\{\\}]*\\}", Pattern.DOTALL);
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
 
     /**
@@ -164,7 +165,7 @@ public class UpdaterService {
 
     /**
      * This will start the {@link UpdaterService} and check for updates.
-     * Official builds auto-download updates, unofficial builds only log newer releases.
+     * Official builds auto-download updates, unofficial builds check GitHub releases.
      */
     public void start() {
         if (updater != null) {
@@ -172,8 +173,8 @@ public class UpdaterService {
         } else {
             printBorder();
             plugin.getLogger().log(Level.WARNING, "It looks like you are using an unofficially modified build of Slimefun!");
-            plugin.getLogger().log(Level.WARNING, "Auto-Downloads have been disabled, this build is not considered safe.");
-            plugin.getLogger().log(Level.WARNING, "GitHub release notifications remain enabled for unofficial builds.");
+            plugin.getLogger().log(Level.WARNING, "GitHub release checks are enabled for this unofficial build.");
+            plugin.getLogger().log(Level.WARNING, "When a newer release is found it will be downloaded for the next restart.");
             plugin.getLogger().log(Level.WARNING, "Do not report bugs encountered in this Version of Slimefun to any official sources.");
             printBorder();
             checkCustomReleaseAsync();
@@ -188,7 +189,7 @@ public class UpdaterService {
      * @return Whether the {@link PluginUpdater} is enabled
      */
     public boolean isEnabled() {
-        return Slimefun.getCfg().getBoolean("options.auto-update") && updater != null;
+        return Slimefun.getCfg().getBoolean("options.auto-update");
     }
 
     /**
@@ -212,8 +213,8 @@ public class UpdaterService {
     }
 
     /**
-     * Compatibility note: unofficial builds now perform a release-notification check
-     * against the custom GitHub repository instead of attempting an auto-download.
+     * Compatibility note: unofficial builds now check the custom GitHub repository
+     * and stage the newest jar in the server update folder for the next restart.
      */
     private void checkCustomReleaseAsync() {
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, this::checkCustomRelease);
@@ -222,19 +223,42 @@ public class UpdaterService {
     private void checkCustomRelease() {
         try {
             ReleaseInfo latestRelease = fetchLatestCustomRelease();
-            Instant currentBuild = parseBuildInstant(pluginFile.getName());
+            Integer currentBuild = parseBuildNumber(pluginFile.getName());
 
-            if (currentBuild == null || latestRelease == null || !latestRelease.publishedAt().isAfter(currentBuild)) {
+            if (latestRelease == null) {
+                plugin.getLogger().log(Level.INFO, "Could not determine the latest GitHub release for this unofficial SlimefunCore build.");
                 return;
             }
 
-            printBorder();
-            plugin.getLogger().log(Level.WARNING, "A newer SlimefunCore release is available on GitHub.");
-            plugin.getLogger().log(Level.WARNING, "Current build: {0}", pluginFile.getName());
-            plugin.getLogger().log(Level.WARNING, "Latest tag: {0}", latestRelease.tag());
-            plugin.getLogger().log(Level.WARNING, "Published: {0}", LocalDateTime.ofInstant(latestRelease.publishedAt(), ZoneId.systemDefault()));
-            plugin.getLogger().log(Level.WARNING, "Download: {0}", latestRelease.url());
-            printBorder();
+            if (currentBuild == null || latestRelease.buildNumber() == null) {
+                plugin.getLogger().log(Level.INFO, "Could not compare build numbers for automatic updates.");
+                plugin.getLogger().log(Level.INFO, "Current jar: {0}", pluginFile.getName());
+                plugin.getLogger().log(Level.INFO, "Latest GitHub release tag: {0}", latestRelease.tag());
+                plugin.getLogger().log(Level.INFO, "Latest GitHub release: {0}", latestRelease.url());
+                return;
+            }
+
+            if (latestRelease.buildNumber() > currentBuild) {
+                printBorder();
+                plugin.getLogger().log(Level.WARNING, "A newer SlimefunCore release is available on GitHub.");
+                plugin.getLogger().log(Level.WARNING, "Current build: {0}", pluginFile.getName());
+                plugin.getLogger().log(Level.WARNING, "Latest asset: {0}", latestRelease.assetName());
+                plugin.getLogger().log(Level.WARNING, "Latest tag: {0}", latestRelease.tag());
+                plugin.getLogger().log(Level.WARNING, "Published: {0}", latestRelease.publishedAt());
+                plugin.getLogger().log(Level.WARNING, "Download: {0}", latestRelease.url());
+
+                if (downloadLatestRelease(latestRelease)) {
+                    plugin.getLogger().log(Level.WARNING, "The new jar was downloaded into the update folder and will apply on the next restart.");
+                }
+
+                printBorder();
+                return;
+            }
+
+            plugin.getLogger().log(Level.INFO, "SlimefunCore is already on the latest GitHub release.");
+            plugin.getLogger().log(Level.INFO, "Current build: {0}", pluginFile.getName());
+            plugin.getLogger().log(Level.INFO, "Latest asset: {0}", latestRelease.assetName());
+            plugin.getLogger().log(Level.INFO, "Latest tag: {0}", latestRelease.tag());
         } catch (IOException | InterruptedException x) {
             plugin.getLogger().log(Level.WARNING, "Failed to check unofficial GitHub releases: " + x.getMessage());
 
@@ -247,7 +271,7 @@ public class UpdaterService {
     private @Nullable ReleaseInfo fetchLatestCustomRelease() throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder(CUSTOM_RELEASES_LATEST)
             .header("User-Agent", USER_AGENT)
-            .header("Accept", "text/html")
+            .header("Accept", "application/vnd.github+json")
             .GET()
             .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -256,33 +280,101 @@ public class UpdaterService {
             return null;
         }
 
-        Matcher matcher = RELEASE_DATETIME_PATTERN.matcher(response.body());
+        String body = response.body();
+        String tag = matchFirst(body, TAG_NAME_PATTERN);
+        String htmlUrl = matchFirst(body, HTML_URL_PATTERN);
+        String publishedAtRaw = matchFirst(body, PUBLISHED_AT_PATTERN);
 
-        if (!matcher.find()) {
+        if (tag == null || htmlUrl == null || publishedAtRaw == null) {
             return null;
         }
 
-        Instant publishedAt = Instant.parse(matcher.group(1));
-        String path = response.uri().getPath();
-        String tag = path.substring(path.lastIndexOf('/') + 1);
-        return new ReleaseInfo(tag, response.uri().toString(), publishedAt);
+        Matcher assetMatcher = ASSET_PATTERN.matcher(body);
+        String assetName = null;
+        String downloadUrl = null;
+
+        while (assetMatcher.find()) {
+            String candidateName = assetMatcher.group(1);
+            String candidateUrl = assetMatcher.group(2);
+
+            if (candidateName.startsWith("SlimefunCore4-") && candidateName.endsWith(".jar") && !candidateName.endsWith("-sources.jar")) {
+                assetName = candidateName;
+                downloadUrl = candidateUrl;
+                break;
+            }
+        }
+
+        if (assetName == null || downloadUrl == null) {
+            return null;
+        }
+
+        Integer buildNumber = parseBuildNumber(assetName);
+        return new ReleaseInfo(tag, htmlUrl, Instant.parse(publishedAtRaw), assetName, downloadUrl, buildNumber);
     }
 
-    private @Nullable Instant parseBuildInstant(@Nonnull String fileName) {
-        Matcher matcher = BUILD_TIMESTAMP_PATTERN.matcher(fileName);
+    private @Nullable Integer parseBuildNumber(@Nonnull String fileName) {
+        Matcher matcher = BUILD_NUMBER_PATTERN.matcher(fileName);
 
         if (!matcher.find()) {
             return null;
         }
 
         try {
-            LocalDateTime timestamp = LocalDateTime.parse(matcher.group(1), BUILD_TIMESTAMP_FORMATTER);
-            return timestamp.atZone(ZoneId.systemDefault()).toInstant();
-        } catch (DateTimeParseException x) {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException x) {
             return null;
         }
     }
 
-    private record ReleaseInfo(@Nonnull String tag, @Nonnull String url, @Nonnull Instant publishedAt) {}
+    private @Nullable String matchFirst(@Nonnull String input, @Nonnull Pattern pattern) {
+        Matcher matcher = pattern.matcher(input);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private boolean downloadLatestRelease(@Nonnull ReleaseInfo latestRelease) {
+        try {
+            File updateFolder = plugin.getServer().getUpdateFolderFile();
+
+            if (!updateFolder.exists() && !updateFolder.mkdirs()) {
+                plugin.getLogger().log(Level.WARNING, "Could not create the server update folder: {0}", updateFolder.getAbsolutePath());
+                return false;
+            }
+
+            Path target = updateFolder.toPath().resolve(latestRelease.assetName());
+
+            // Compatibility note: always download through a temporary file so a partial transfer never becomes the live update.
+            Path temporary = Files.createTempFile(updateFolder.toPath(), "slimefun-update-", ".jar");
+
+            try {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(latestRelease.downloadUrl()))
+                    .header("User-Agent", USER_AGENT)
+                    .GET()
+                    .build();
+
+                HttpResponse<Path> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
+
+                if (response.statusCode() >= 400) {
+                    plugin.getLogger().log(Level.WARNING, "Failed to download the latest GitHub release asset. Response code: {0}", response.statusCode());
+                    Files.deleteIfExists(temporary);
+                    return false;
+                }
+
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            } finally {
+                Files.deleteIfExists(temporary);
+            }
+        } catch (IOException | InterruptedException x) {
+            plugin.getLogger().log(Level.WARNING, "Failed to download the latest unofficial GitHub release: " + x.getMessage());
+
+            if (x instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            return false;
+        }
+    }
+
+    private record ReleaseInfo(@Nonnull String tag, @Nonnull String url, @Nonnull Instant publishedAt, @Nonnull String assetName, @Nonnull String downloadUrl, @Nullable Integer buildNumber) {}
 
 }
