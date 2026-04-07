@@ -42,7 +42,7 @@ https://github.com/rutwok-labs/SF4-Addons
 ---
 
 ## Download
-🔗 **Link** : [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
+🔗 **Link** : [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/SlimefunCore-V.4.0/releases/download/slimefuncore4-2610/SlimefunCore4-2609.jar)
 
 > **Note**: This is an **unofficial fork**. Always test on a backup server before using on production.
 
