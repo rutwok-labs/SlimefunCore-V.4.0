@@ -112,7 +112,7 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Thank you for using Slimefun 4.9-UNOFFICIAL!**  
+**Thank you for using Slimefun 4.0-UNOFFICIAL!**  
 Enjoy your modpack-like experience on the latest Minecraft version! :tada:
 
 *Made with ❤️ for the Minecraft community*
