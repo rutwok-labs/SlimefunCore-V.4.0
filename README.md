@@ -1,4 +1,4 @@
-# Slimefun 4.9-UNOFFICIAL
+# Slimefun 4.0-UNOFFICIAL
 **Modified Version**  
 ![Slimefun](https://img.shields.io/badge/Minecraft-1.21.11-62b47a?style=for-the-badge&logo=minecraft) 
 ![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge&logo=java) 
@@ -42,7 +42,8 @@ https://github.com/rutwok-labs/SF4-Addons
 ---
 
 ## Download
-🔗 **Link** : [Slimefun v4.9-UNOFFICIAL.jar](https://github.com/rutwok-labs/Slimefun-V.4.9-experimental-1.21.11/releases/download/slimefun4/Slimefun.v4.9-UNOFFICIAL.jar)
+🔗 **Link** : [SlimefunCore4-2609.jar
+](https://github.com/rutwok-labs/SlimefunCore-V.4.0/releases/download/slimefuncore4-2610/SlimefunCore4-2609.jar)
 
 > **Note**: This is an **unofficial fork**. Always test on a backup server before using on production.
 
@@ -111,7 +112,7 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-**Thank you for using Slimefun 4.9-UNOFFICIAL!**  
+**Thank you for using Slimefun 4.0-UNOFFICIAL!**  
 Enjoy your modpack-like experience on the latest Minecraft version! :tada:
 
 *Made with ❤️ for the Minecraft community*
