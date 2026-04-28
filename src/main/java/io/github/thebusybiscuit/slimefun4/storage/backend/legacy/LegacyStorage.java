@@ -16,14 +16,24 @@ import com.google.common.annotations.Beta;
 
 import javax.annotation.Nonnull;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 
 @Beta
 public class LegacyStorage implements Storage {
+
+    private static final Set<Integer> VALID_BACKPACK_SIZES = Set.of(9, 18, 27, 36, 45, 54);
 
     @Override
     public PlayerData loadPlayerData(@Nonnull UUID uuid) {
@@ -35,29 +45,62 @@ public class LegacyStorage implements Storage {
 
         // Load research
         Set<Research> researches = new HashSet<>();
+
+        Map<Integer, List<Research>> researchesById = new HashMap<>();
         for (Research research : Slimefun.getRegistry().getResearches()) {
-            if (playerFile.contains("researches." + research.getID())) {
-                researches.add(research);
+            researchesById.computeIfAbsent(research.getID(), ignored -> new ArrayList<>()).add(research);
+        }
+
+        if (playerFile.contains("researches")) {
+            for (String key : playerFile.getKeys("researches")) {
+                try {
+                    int researchId = Integer.parseInt(key);
+                    List<Research> matchedResearches = researchesById.get(researchId);
+
+                    if (matchedResearches == null || matchedResearches.isEmpty()) {
+                        Slimefun.logger().log(Level.WARNING, "Skipping unknown Research ID {0} for Player \"{1}\"", new Object[] { researchId, uuid });
+                        continue;
+                    }
+
+                    researches.addAll(matchedResearches);
+                } catch (NumberFormatException x) {
+                    Slimefun.logger().log(Level.WARNING, x, () -> "Skipping malformed Research key \"" + key + "\" for Player \"" + uuid + '"');
+                }
             }
         }
 
         // Load backpacks
         HashMap<Integer, PlayerBackpack> backpacks = new HashMap<>();
-        for (String key : playerFile.getKeys("backpacks")) {
-            try {
-                int id = Integer.parseInt(key);
-                int size = playerFile.getInt("backpacks." + key + ".size");
+        if (playerFile.contains("backpacks")) {
+            for (String key : playerFile.getKeys("backpacks")) {
+                try {
+                    int id = Integer.parseInt(key);
+                    int size = playerFile.getInt("backpacks." + key + ".size");
 
-                HashMap<Integer, ItemStack> items = new HashMap<>();
-                for (int i = 0; i < size; i++) {
-                    items.put(i, playerFile.getItem("backpacks." + key + ".contents." + i));
+                    if (!VALID_BACKPACK_SIZES.contains(size)) {
+                        Slimefun.logger().log(Level.WARNING, "Skipping Backpack \"{0}\" for Player \"{1}\" because size {2} is invalid", new Object[] { key, uuid, size });
+                        continue;
+                    }
+
+                    HashMap<Integer, ItemStack> items = new HashMap<>();
+                    for (int i = 0; i < size; i++) {
+                        final int slot = i;
+                        try {
+                            ItemStack item = playerFile.getItem("backpacks." + key + ".contents." + slot);
+                            if (item != null) {
+                                items.put(slot, item);
+                            }
+                        } catch (Exception itemException) {
+                            Slimefun.logger().log(Level.WARNING, itemException, () -> "Skipping Backpack slot " + slot + " for Backpack \"" + key + "\" of Player \"" + uuid + '"');
+                        }
+                    }
+
+                    PlayerBackpack backpack = PlayerBackpack.load(uuid, id, size, items);
+
+                    backpacks.put(id, backpack);
+                } catch (Exception x) {
+                    Slimefun.logger().log(Level.WARNING, x, () -> "Could not load Backpack \"" + key + "\" for Player \"" + uuid + '"');
                 }
-
-                PlayerBackpack backpack = PlayerBackpack.load(uuid, id, size, items);
-
-                backpacks.put(id, backpack);
-            } catch (Exception x) {
-                Slimefun.logger().log(Level.WARNING, x, () -> "Could not load Backpack \"" + key + "\" for Player \"" + uuid + '"');
             }
         }
 
@@ -86,62 +129,103 @@ public class LegacyStorage implements Storage {
     public void savePlayerData(@Nonnull UUID uuid, @Nonnull PlayerData data) {
         long start = System.nanoTime();
 
-        Config playerFile = new Config("data-storage/Slimefun/Players/" + uuid + ".yml");
-        // Not too sure why this is its own file
-        Config waypointsFile = new Config("data-storage/Slimefun/waypoints/" + uuid + ".yml");
-
-        // Save research
-        playerFile.setValue("rearches", null);
-        for (Research research : Slimefun.getRegistry().getResearches()) {
-            // Save the research if it's researched
-            if (data.getResearches().contains(research)) {
-                playerFile.setValue("researches." + research.getID(), true);
-
-            // Remove the research if it's no longer researched
-            // ----
-            // We have a duplicate ID (173) used for both Coal Gen and Bio Reactor
-            // If you researched the Goal Gen we would remove it on save if you didn't also have the Bio Reactor
-            // Due to the fact we would set it as researched (true in the branch above) on Coal Gen
-            // but then go into this branch and remove it if you didn't have Bio Reactor
-            // Sooooo we're gonna hack this for now while we move away from the Legacy Storage
-            // Let's make sure the user doesn't have _any_ research with this ID and _then_ remove it
-            } else if (
-                playerFile.contains("researches." + research.getID())
-                && !data.getResearches().stream().anyMatch((r) -> r.getID() == research.getID())
-            ) {
-                playerFile.setValue("researches." + research.getID(), null);
-            }
+        if (!data.isDirty()) {
+            return;
         }
 
-        // Save backpacks
-        for (PlayerBackpack backpack : data.getBackpacks().values()) {
-            playerFile.setValue("backpacks." + backpack.getId() + ".size", backpack.getSize());
+        boolean playerSectionsDirty = data.isResearchesDirty() || data.isBackpacksDirty();
+        boolean waypointsDirty = data.isWaypointsDirty();
+        Config playerFile = playerSectionsDirty ? new Config("data-storage/Slimefun/Players/" + uuid + ".yml") : null;
+        // Not too sure why this is its own file
+        Config waypointsFile = waypointsDirty ? new Config("data-storage/Slimefun/waypoints/" + uuid + ".yml") : null;
 
-            for (int i = 0; i < backpack.getSize(); i++) {
-                ItemStack item = backpack.getInventory().getItem(i);
-                if (item != null) {
-                    playerFile.setValue("backpacks." + backpack.getId() + ".contents." + i, item);
+        if (data.isResearchesDirty()) {
+            if (playerFile == null) {
+                throw new IllegalStateException("Player file must be available when researches are dirty");
+            }
 
-                // Remove the item if it's no longer in the inventory
-                } else if (playerFile.contains("backpacks." + backpack.getId() + ".contents." + i)) {
-                    playerFile.setValue("backpacks." + backpack.getId() + ".contents." + i, null);
+            playerFile.setValue("researches", null);
+
+            Set<Integer> savedResearchIds = new HashSet<>();
+            for (Research research : data.getResearches()) {
+                if (savedResearchIds.add(research.getID())) {
+                    playerFile.setValue("researches." + research.getID(), true);
                 }
             }
         }
 
-        // Save waypoints
-        waypointsFile.clear();
-        for (Waypoint waypoint : data.getWaypoints()) {
-            // Legacy data uses IDs
-            waypointsFile.setValue(waypoint.getId(), waypoint.getLocation());
-            waypointsFile.setValue(waypoint.getId() + ".name", waypoint.getName());
+        if (data.isBackpacksDirty()) {
+            if (playerFile == null) {
+                throw new IllegalStateException("Player file must be available when backpacks are dirty");
+            }
+
+            playerFile.setValue("backpacks", null);
+
+            for (PlayerBackpack backpack : data.getBackpacks().values()) {
+                playerFile.setValue("backpacks." + backpack.getId() + ".size", backpack.getSize());
+
+                for (int i = 0; i < backpack.getSize(); i++) {
+                    ItemStack item = backpack.getInventory().getItem(i);
+                    if (item != null) {
+                        playerFile.setValue("backpacks." + backpack.getId() + ".contents." + i, item);
+                    }
+                }
+            }
         }
 
-        // Save files
-        playerFile.save();
-        waypointsFile.save();
+        if (waypointsDirty) {
+            if (waypointsFile == null) {
+                throw new IllegalStateException("Waypoints file must be available when waypoints are dirty");
+            }
+
+            waypointsFile.clear();
+            for (Waypoint waypoint : data.getWaypoints()) {
+                // Legacy data uses IDs
+                waypointsFile.setValue(waypoint.getId(), waypoint.getLocation());
+                waypointsFile.setValue(waypoint.getId() + ".name", waypoint.getName());
+            }
+        }
+
+        boolean playerSaved = !playerSectionsDirty || atomicSave(playerFile);
+        boolean waypointsSaved = !waypointsDirty || atomicSave(waypointsFile);
+
+        if (playerSaved && waypointsSaved) {
+            data.markClean();
+        }
 
         long end = System.nanoTime();
         Slimefun.getAnalyticsService().recordPlayerProfileDataTime("legacy", false, end - start);
+    }
+
+    private boolean atomicSave(@Nonnull Config config) {
+        File targetFile = config.getFile();
+        File parent = targetFile.getParentFile();
+        File tmpFile = new File(parent, targetFile.getName() + ".tmp");
+
+        try {
+            if (parent != null) {
+                Files.createDirectories(parent.toPath());
+            }
+
+            config.save(tmpFile);
+            moveReplace(tmpFile, targetFile);
+            return true;
+        } catch (Exception x) {
+            try {
+                Files.deleteIfExists(tmpFile.toPath());
+            } catch (IOException ignored) {
+            }
+
+            Slimefun.logger().log(Level.SEVERE, x, () -> "Could not atomically save player storage file \"" + targetFile.getName() + '"');
+            return false;
+        }
+    }
+
+    private void moveReplace(@Nonnull File source, @Nonnull File target) throws IOException {
+        try {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ignored) {
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }

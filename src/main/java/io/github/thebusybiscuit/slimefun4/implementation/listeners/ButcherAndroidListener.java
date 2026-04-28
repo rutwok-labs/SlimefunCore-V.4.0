@@ -18,6 +18,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.metadata.MetadataValue;
 
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.items.androids.AndroidInstance;
@@ -42,7 +43,18 @@ public class ButcherAndroidListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onDeath(EntityDeathEvent e) {
         if (e.getEntity().hasMetadata(METADATA_KEY)) {
-            AndroidInstance obj = (AndroidInstance) e.getEntity().getMetadata(METADATA_KEY).get(0).value();
+            AndroidInstance obj = e.getEntity().getMetadata(METADATA_KEY).stream()
+                .filter(value -> value.getOwningPlugin() == Slimefun.instance())
+                .map(MetadataValue::value)
+                .filter(AndroidInstance.class::isInstance)
+                .map(AndroidInstance.class::cast)
+                .findFirst()
+                .orElse(null);
+
+            if (obj == null) {
+                e.getEntity().removeMetadata(METADATA_KEY, Slimefun.instance());
+                return;
+            }
 
             Slimefun.runSync(() -> {
                 List<ItemStack> items = new ArrayList<>();
@@ -86,7 +98,7 @@ public class ButcherAndroidListener implements Listener {
         }
 
         if (entityType == EntityType.BLAZE) {
-            drops.add(new ItemStack(Material.BLAZE_ROD, 1 + random.nextInt(1)));
+            drops.add(new ItemStack(Material.BLAZE_ROD, 1 + random.nextInt(2)));
         }
 
         if (entityType == EntityType.VINDICATOR) {

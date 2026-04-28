@@ -2,6 +2,7 @@ package io.github.thebusybiscuit.slimefun4.implementation.listeners;
 
 import javax.annotation.Nonnull;
 
+import io.github.bakedlibs.dough.common.ChatColors;
 import org.bukkit.Material;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -11,6 +12,7 @@ import org.bukkit.inventory.ItemStack;
 import io.github.thebusybiscuit.slimefun4.api.items.HashedArmorpiece;
 import io.github.thebusybiscuit.slimefun4.api.items.SlimefunItem;
 import io.github.thebusybiscuit.slimefun4.api.player.PlayerProfile;
+import io.github.thebusybiscuit.slimefun4.core.services.UpdaterService.UpdateStatus;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.items.armor.SlimefunArmorPiece;
 import io.github.thebusybiscuit.slimefun4.implementation.tasks.armor.RadiationTask;
@@ -39,6 +41,21 @@ public class JoinListener implements Listener {
                 }
             }
         });
+
+        if (!Slimefun.getCfg().getBoolean("options.notify-admins-about-updates") || !e.getPlayer().hasPermission("slimefun.command.update")) {
+            return;
+        }
+
+        UpdateStatus status = Slimefun.getUpdater().getStatus();
+
+        if (status.updateAvailable()) {
+            e.getPlayer().sendMessage(ChatColors.color("&6Slimefun update available: &f" + status.latestVersion()));
+            e.getPlayer().sendMessage(ChatColors.color("&7Current: &f" + status.currentVersion()));
+
+            if (status.projectUrl() != null) {
+                e.getPlayer().sendMessage(ChatColors.color("&7Download: &f" + status.projectUrl()));
+            }
+        }
     }
 
 }

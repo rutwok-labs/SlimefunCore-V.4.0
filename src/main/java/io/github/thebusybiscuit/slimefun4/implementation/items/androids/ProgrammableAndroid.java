@@ -62,11 +62,13 @@ import me.mrCookieSlime.Slimefun.api.item_transport.ItemTransportFlow;
 
 public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock, RecipeDisplayItem {
 
+    private static final String BLOCK_INFO_LAST_ERROR = "last-error";
     private static final List<BlockFace> POSSIBLE_ROTATIONS = Arrays.asList(BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH, BlockFace.WEST);
     private static final int[] BORDER = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 18, 24, 25, 26, 27, 33, 35, 36, 42, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53 };
     private static final int[] OUTPUT_BORDER = { 10, 11, 12, 13, 14, 19, 23, 28, 32, 37, 38, 39, 40, 41 };
     private static final String DEFAULT_SCRIPT = "START-TURN_LEFT-REPEAT";
     private static final int MAX_SCRIPT_LENGTH = 54;
+    private static final int STATUS_SLOT = 44;
 
     protected final List<MachineFuel> fuelTypes = new ArrayList<>();
     protected final String texture;
@@ -104,6 +106,7 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
                 menu.addMenuClickHandler(15, (p, slot, item, action) -> {
                     Slimefun.getLocalization().sendMessage(p, "android.started", true);
                     BlockStorage.addBlockInfo(b, "paused", "false");
+                    clearLastError(b);
                     p.closeInventory();
                     return false;
                 });
@@ -120,6 +123,12 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
                     BlockStorage.addBlockInfo(b, "paused", "true");
                     Slimefun.getLocalization().sendMessage(p, "android.stopped", true);
                     openScriptEditor(p, b);
+                    return false;
+                });
+
+                updateStatusItem(menu, b);
+                menu.addMenuClickHandler(STATUS_SLOT, (p, slot, item, action) -> {
+                    updateStatusItem(menu, b);
                     return false;
                 });
             }
@@ -371,7 +380,7 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
         menu.addMenuOpeningHandler(SoundEffect.PROGRAMMABLE_ANDROID_SCRIPT_DOWNLOAD_SOUND::playFor);
 
         List<Script> scripts = Script.getUploadedScripts(getAndroidType());
-        int pages = (scripts.size() / 45) + 1;
+        int pages = Math.max(1, (scripts.size() + 44) / 45);
 
         for (int i = 45; i < 54; i++) {
             menu.addItem(i, ChestMenuUtils.getBackground());
@@ -588,6 +597,8 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
         Validate.isTrue(CommonPatterns.DASH.split(script).length <= MAX_SCRIPT_LENGTH, "Scripts may not have more than " + MAX_SCRIPT_LENGTH + " segments");
 
         BlockStorage.addBlockInfo(l, "script", script);
+        BlockStorage.addBlockInfo(l, "index", "0");
+        BlockStorage.addBlockInfo(l, BLOCK_INFO_LAST_ERROR, null);
     }
 
     private void registerDefaultFuelTypes() {
@@ -674,66 +685,79 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
             return;
         }
 
-        if ("false".equals(data.getString("paused"))) {
-            BlockMenu menu = BlockStorage.getInventory(b);
+        if (!"false".equals(data.getString("paused"))) {
+            return;
+        }
 
-            String fuelData = data.getString("fuel");
-            float fuel = fuelData == null ? 0 : Float.parseFloat(fuelData);
+        BlockMenu menu = BlockStorage.getInventory(b);
+        if (menu == null) {
+            return;
+        }
 
-            if (fuel < 0.001) {
+        try {
+            float fuel = parseFuelValue(b, data.getString("fuel"));
+
+            if (fuel < 0.001F) {
                 consumeFuel(b, menu);
-            } else {
-                String code = data.getString("script");
-                String[] script = CommonPatterns.DASH.split(code == null ? DEFAULT_SCRIPT : code);
-
-                String indexData = data.getString("index");
-                int index = (indexData == null ? 0 : Integer.parseInt(indexData)) + 1;
-
-                if (index >= script.length) {
-                    index = 0;
-                }
-
-                BlockStorage.addBlockInfo(b, "fuel", String.valueOf(fuel - 1));
-                Instruction instruction = Instruction.getInstruction(script[index]);
-
-                if (instruction == null) {
-                    Slimefun.instance().getLogger().log(Level.WARNING, "Failed to parse Android instruction: {0}, maybe your server is out of date?", script[index]);
-                    return;
-                }
-
-                executeInstruction(instruction, b, menu, data, index);
+                clearLastError(b);
+                return;
             }
+
+            String code = data.getString("script");
+            String[] script = CommonPatterns.DASH.split(code == null ? DEFAULT_SCRIPT : code);
+            int index = parseInstructionIndex(b, data.getString("index"), script.length) + 1;
+
+            if (index >= script.length || index < 0) {
+                index = 0;
+            }
+
+            BlockStorage.addBlockInfo(b, "fuel", String.valueOf(Math.max(0.0F, fuel - 1.0F)));
+            Instruction instruction = Instruction.getInstruction(script[index]);
+
+            if (instruction == null) {
+                reportRuntimeIssue(b, "Invalid script instruction '" + script[index] + "'");
+                return;
+            }
+
+            executeInstruction(instruction, b, menu, data, index);
+            clearLastError(b);
+        } catch (Exception x) {
+            reportRuntimeIssue(b, "Android execution failed: " + x.getClass().getSimpleName());
+            Slimefun.instance().getLogger().log(Level.WARNING, x, () -> "Programmable Android at " + b.getLocation() + " failed while executing its script");
         }
     }
 
     @ParametersAreNonnullByDefault
     private void executeInstruction(Instruction instruction, Block b, BlockMenu inv, Config data, int index) {
-        if (getAndroidType().isType(instruction.getRequiredType())) {
-            String rotationData = data.getString("rotation");
-            BlockFace face = rotationData == null ? BlockFace.NORTH : BlockFace.valueOf(rotationData);
+        if (!getAndroidType().isType(instruction.getRequiredType())) {
+            BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
+            return;
+        }
 
-            switch (instruction) {
-                case START:
-                case WAIT:
-                    // We are "waiting" here, so we only move a step forward
+        String rotationData = data.getString("rotation");
+        BlockFace face = parseRotation(b, rotationData);
+
+        switch (instruction) {
+            case START:
+            case WAIT:
+                // We are "waiting" here, so we only move a step forward
+                BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
+                break;
+            case REPEAT:
+                // "repeat" just means, we reset our index
+                BlockStorage.addBlockInfo(b, "index", String.valueOf(0));
+                break;
+            case CHOP_TREE:
+                // We only move to the next step if we finished chopping wood
+                if (chopTree(b, inv, face)) {
                     BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
-                    break;
-                case REPEAT:
-                    // "repeat" just means, we reset our index
-                    BlockStorage.addBlockInfo(b, "index", String.valueOf(0));
-                    break;
-                case CHOP_TREE:
-                    // We only move to the next step if we finished chopping wood
-                    if (chopTree(b, inv, face)) {
-                        BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
-                    }
-                    break;
-                default:
-                    // We set the index here in advance to fix moving android issues
-                    BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
-                    instruction.execute(this, b, inv, face);
-                    break;
-            }
+                }
+                break;
+            default:
+                // We set the index here in advance to fix moving android issues
+                BlockStorage.addBlockInfo(b, "index", String.valueOf(index));
+                instruction.execute(this, b, inv, face);
+                break;
         }
     }
 
@@ -831,6 +855,7 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
 
                     int fuelLevel = fuel.getTicks();
                     BlockStorage.addBlockInfo(b, "fuel", String.valueOf(fuelLevel));
+                    clearLastError(b);
                     break;
                 }
             }
@@ -846,6 +871,115 @@ public class ProgrammableAndroid extends SlimefunItem implements InventoryBlock,
         }
 
         preset.addItem(34, getFuelSource().getItem(), ChestMenuUtils.getEmptyClickHandler());
+    }
+
+    private void updateStatusItem(@Nonnull BlockMenu menu, @Nonnull Block b) {
+        Config data = BlockStorage.getLocationInfo(b.getLocation());
+        String[] script = CommonPatterns.DASH.split(getScript(b.getLocation()));
+        int storedIndex = data == null ? 0 : parseInstructionIndex(b, data.getString("index"), script.length);
+
+        if (storedIndex >= script.length || storedIndex < 0) {
+            storedIndex = 0;
+        }
+
+        String paused = data == null ? "true" : data.getString("paused");
+        float fuel = data == null ? 0.0F : parseFuelValue(b, data.getString("fuel"));
+        String error = BlockStorage.getLocationInfo(b.getLocation(), BLOCK_INFO_LAST_ERROR);
+        boolean waitingForFuel = "false".equals(paused) && error == null && fuel < 0.001F;
+        boolean running = "false".equals(paused) && error == null && !waitingForFuel;
+        int displayIndex = running && script.length > 1 ? storedIndex + 1 : storedIndex;
+
+        if (displayIndex >= script.length || displayIndex < 0) {
+            displayIndex = 0;
+        }
+
+        String command = script[displayIndex];
+
+        List<String> lore = new ArrayList<>();
+        lore.add(running ? "&8⇨ &7State: &aRunning" : waitingForFuel ? "&8⇨ &7State: &6Waiting for Fuel" : error != null ? "&8⇨ &7State: &cError" : "&8⇨ &7State: &ePaused");
+        lore.add("&8⇨ &7Step: &f" + (displayIndex + 1) + "/" + script.length);
+        lore.add("&8⇨ &7Next Command: &f" + command);
+        lore.add("&8⇨ &7Fuel Buffer: &f" + NumberUtils.getCompactDouble(fuel));
+        lore.add("&8⇨ &7Fuel Type: &f" + getFuelSource().name());
+        lore.add("&8⇨ &7Facing: &f" + parseRotation(b, data == null ? null : data.getString("rotation")).name());
+
+        if (error != null) {
+            lore.add("");
+            lore.add("&cLast Error:");
+            lore.add("&7" + error);
+        } else {
+            lore.add("");
+            lore.add("&8⇨ &7Last Error: &aNone");
+        }
+
+        lore.add("");
+        lore.add("&eClick to refresh");
+
+        Material icon = error != null ? Material.BARRIER : running ? Material.CLOCK : waitingForFuel ? Material.COAL : Material.COMPARATOR;
+        menu.replaceExistingItem(STATUS_SLOT, CustomItemStack.create(new ItemStack(icon), error != null ? "&cAndroid Status" : running ? "&aAndroid Status" : waitingForFuel ? "&6Android Status" : "&eAndroid Status", lore.toArray(new String[0])));
+    }
+
+    private float parseFuelValue(@Nonnull Block b, String fuelData) {
+        if (fuelData == null) {
+            return 0.0F;
+        }
+
+        try {
+            return Float.parseFloat(fuelData);
+        } catch (NumberFormatException x) {
+            BlockStorage.addBlockInfo(b, "fuel", "0");
+            reportRuntimeIssue(b, "Corrupted fuel data was reset");
+            return 0.0F;
+        }
+    }
+
+    private int parseInstructionIndex(@Nonnull Block b, String indexData, int scriptLength) {
+        if (indexData == null) {
+            return 0;
+        }
+
+        try {
+            int index = Integer.parseInt(indexData);
+            if (index < 0 || index >= scriptLength) {
+                BlockStorage.addBlockInfo(b, "index", "0");
+                reportRuntimeIssue(b, "Corrupted script index was reset");
+                return 0;
+            }
+
+            return index;
+        } catch (NumberFormatException x) {
+            BlockStorage.addBlockInfo(b, "index", "0");
+            reportRuntimeIssue(b, "Corrupted script index was reset");
+            return 0;
+        }
+    }
+
+    private @Nonnull BlockFace parseRotation(@Nonnull Block b, String rotationData) {
+        if (rotationData == null) {
+            return BlockFace.NORTH;
+        }
+
+        try {
+            BlockFace face = BlockFace.valueOf(rotationData);
+            if (POSSIBLE_ROTATIONS.contains(face)) {
+                return face;
+            }
+        } catch (IllegalArgumentException ignored) {
+        }
+
+        BlockStorage.addBlockInfo(b, "rotation", BlockFace.NORTH.name());
+        reportRuntimeIssue(b, "Invalid rotation was reset");
+        return BlockFace.NORTH;
+    }
+
+    private void reportRuntimeIssue(@Nonnull Block b, @Nonnull String message) {
+        BlockStorage.addBlockInfo(b, BLOCK_INFO_LAST_ERROR, message);
+        BlockStorage.addBlockInfo(b, "paused", "true");
+        Slimefun.instance().getLogger().log(Level.WARNING, "Programmable Android at {0}: {1}", new Object[] { b.getLocation(), message });
+    }
+
+    private void clearLastError(@Nonnull Block b) {
+        BlockStorage.addBlockInfo(b, BLOCK_INFO_LAST_ERROR, null);
     }
 
     @ParametersAreNonnullByDefault

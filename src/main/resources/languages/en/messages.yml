@@ -5,6 +5,7 @@ commands:
   guide: Gives yourself a Slimefun Guide
   teleporter: See other Player's Waypoints
   versions: Lists all installed Addons
+  update: Checks for new Slimefun updates
   search: Searches your Guide for the given term
   open_guide: Opens Slimefun's guide without using the book
   stats: Shows some Stats about a Player

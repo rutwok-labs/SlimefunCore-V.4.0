@@ -4,7 +4,15 @@ options:
   # Note: When running a stable build auto-updates ONLY update to other stable builds! Perfect eh?
   # You can download the latest stable build here: https://thebusybiscuit.github.io/builds/TheBusyBiscuit/Slimefun4/stable/
 
+  # Controls whether Slimefun checks for updates at startup.
   auto-update: true
+  # When enabled, unofficial builds will download the newest compatible Modrinth jar
+  # into /plugins/update so the server can apply it on the next restart.
+  auto-download-update: true
+  # Modrinth project slug used by unofficial builds for update checks.
+  modrinth-project: slimefuncore
+  # Send update notices to players with slimefun.command.update when they join.
+  notify-admins-about-updates: true
   chat-prefix: '&a&lSlimefun 4&7> '
   armor-update-interval: 10
   enable-armor-effects: true
@@ -51,6 +59,10 @@ talismans:
 metrics:
   auto-update: true
   analytics: true
+
+storage:
+  backend: legacy
+  consistency-check-interval-minutes: 60
 
 research-ranks:
 - Chicken

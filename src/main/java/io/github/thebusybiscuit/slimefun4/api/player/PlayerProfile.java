@@ -270,14 +270,13 @@ public class PlayerProfile {
             throw new IllegalArgumentException("Backpacks cannot have negative ids!");
         }
 
-        PlayerBackpack backpack = data.getBackpack(id);
+        Optional<PlayerBackpack> backpack = data.getBackpack(id);
 
-        if (backpack != null) {
+        if (backpack.isPresent()) {
             markDirty();
-            return Optional.of(backpack);
         }
 
-        return Optional.empty();
+        return backpack;
     }
 
     private int countNonEmptyResearches(@Nonnull Collection<Research> researches) {

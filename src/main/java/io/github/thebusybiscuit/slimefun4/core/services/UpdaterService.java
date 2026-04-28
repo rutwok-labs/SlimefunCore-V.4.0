@@ -3,15 +3,17 @@ package io.github.thebusybiscuit.slimefun4.core.services;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,77 +21,51 @@ import java.util.regex.Pattern;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import io.github.bakedlibs.dough.updater.BlobBuildUpdater;
 import org.bukkit.plugin.Plugin;
 
-import io.github.bakedlibs.dough.config.Config;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
+import io.github.bakedlibs.dough.updater.BlobBuildUpdater;
 import io.github.bakedlibs.dough.updater.PluginUpdater;
 import io.github.bakedlibs.dough.versions.PrefixedVersion;
 import io.github.thebusybiscuit.slimefun4.api.SlimefunBranch;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
+import io.github.thebusybiscuit.slimefun4.utils.JsonUtils;
 
 /**
  * This Class represents our {@link PluginUpdater} Service.
  * Official builds use blob.build for auto-download updates.
- * Unofficial builds only perform a safe GitHub release notification check.
+ * Unofficial builds use a configurable Modrinth project check with optional auto-download.
  *
  * @author TheBusyBiscuit
- *
  */
 public class UpdaterService {
 
-    private static final String CUSTOM_RELEASE_REPOSITORY = "rutwok-labs/SlimefunCore-V.4.0";
-    private static final URI CUSTOM_RELEASES_LATEST = URI.create("https://api.github.com/repos/" + CUSTOM_RELEASE_REPOSITORY + "/releases/latest");
+    private static final String DEFAULT_MODRINTH_PROJECT = "slimefuncore";
     private static final String USER_AGENT = "SlimefunCoreV4.0-Updater";
+    private static final String MODRINTH_VERSION_ENDPOINT = "https://api.modrinth.com/v2/project/%s/version?game_versions=%s&loaders=%s";
     private static final Pattern BUILD_NUMBER_PATTERN = Pattern.compile("(\\d{4})(?=\\.jar$)");
-    private static final Pattern TAG_NAME_PATTERN = Pattern.compile("\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern HTML_URL_PATTERN = Pattern.compile("\"html_url\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern PUBLISHED_AT_PATTERN = Pattern.compile("\"published_at\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern ASSET_PATTERN = Pattern.compile("\\{[^\\{\\}]*\"name\"\\s*:\\s*\"([^\"]+)\"[^\\{\\}]*\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"[^\\{\\}]*\\}", Pattern.DOTALL);
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
 
-    /**
-     * Our {@link Slimefun} instance.
-     */
     private final Slimefun plugin;
-
-    /**
-     * The current plugin jar file so unofficial builds can derive their local build number.
-     */
     private final File pluginFile;
-
-    /**
-     * Our {@link PluginUpdater} implementation.
-     */
     private final PluginUpdater<PrefixedVersion> updater;
-
-    /**
-     * The {@link SlimefunBranch} we are currently on.
-     * If this is an official {@link SlimefunBranch}, auto updates will be enabled.
-     */
     private final SlimefunBranch branch;
+    private volatile @Nullable ReleaseInfo latestRelease;
+    private volatile @Nullable String lastCheckError;
+    private volatile boolean lastCheckCompleted;
 
-    /**
-     * This will create a new {@link UpdaterService} for the given {@link Slimefun}.
-     * The {@link File} should be the result of the getFile() operation of that {@link Plugin}.
-     *
-     * @param plugin
-     *            The instance of Slimefun
-     * @param version
-     *            The current version of Slimefun
-     * @param file
-     *            The {@link File} of this {@link Plugin}
-     */
     public UpdaterService(@Nonnull Slimefun plugin, @Nonnull String version, @Nonnull File file) {
         this.plugin = plugin;
         this.pluginFile = file;
+
         BlobBuildUpdater autoUpdater = null;
 
         if (version.contains("UNOFFICIAL")) {
-            // This Server is using a modified build that is not a public release.
             branch = SlimefunBranch.UNOFFICIAL;
         } else if (version.startsWith("Dev - ")) {
-            // If we are using a development build, we want to switch to our custom
             try {
                 autoUpdater = new BlobBuildUpdater(plugin, file, "Slimefun4", "Dev");
             } catch (Exception x) {
@@ -98,7 +74,6 @@ public class UpdaterService {
 
             branch = SlimefunBranch.DEVELOPMENT;
         } else if (version.startsWith("RC - ")) {
-            // If we are using a "stable" build, we want to switch to our custom
             try {
                 autoUpdater = new BlobBuildUpdater(plugin, file, "Slimefun4", "RC");
             } catch (Exception x) {
@@ -113,24 +88,10 @@ public class UpdaterService {
         this.updater = autoUpdater;
     }
 
-    /**
-     * This method returns the branch the current build of Slimefun is running on.
-     * This can be used to determine whether we are dealing with an official build
-     * or a build that was unofficially modified.
-     *
-     * @return The branch this build of Slimefun is on.
-     */
     public @Nonnull SlimefunBranch getBranch() {
         return branch;
     }
 
-    /**
-     * This method returns the build number that this is running on (or -1 if unofficial).
-     * You should combine the usage with {@link #getBranch()} in order to properly see if this is
-     * a development or stable build number.
-     *
-     * @return The build number of this Slimefun.
-     */
     public int getBuildNumber() {
         if (updater != null) {
             PrefixedVersion version = updater.getCurrentVersion();
@@ -142,9 +103,8 @@ public class UpdaterService {
 
     public int getLatestVersion() {
         if (updater != null && updater.getLatestVersion().isDone()) {
-            PrefixedVersion version;
             try {
-                version = updater.getLatestVersion().get();
+                PrefixedVersion version = updater.getLatestVersion().get();
                 return version.getVersionNumber();
             } catch (InterruptedException | ExecutionException e) {
                 return -1;
@@ -155,54 +115,53 @@ public class UpdaterService {
     }
 
     public boolean isLatestVersion() {
+        if (branch == SlimefunBranch.UNOFFICIAL) {
+            Integer currentBuild = parseBuildNumber(pluginFile.getName());
+            Integer latestBuild = latestRelease != null ? latestRelease.buildNumber() : null;
+            return currentBuild == null || latestBuild == null || currentBuild >= latestBuild;
+        }
+
         if (getBuildNumber() == -1 || getLatestVersion() == -1) {
-            // We don't know if we're latest so just report we are
             return true;
         }
-        
+
         return getBuildNumber() == getLatestVersion();
     }
 
     /**
-     * This will start the {@link UpdaterService} and check for updates.
-     * Official builds auto-download updates, unofficial builds check GitHub releases.
+     * Start updater logic.
+     * Official builds use blob.build.
+     * Unofficial builds query Modrinth and optionally stage the new jar into /plugins/update.
      */
     public void start() {
         if (updater != null) {
             updater.start();
-        } else {
-            printBorder();
-            plugin.getLogger().log(Level.WARNING, "It looks like you are using an unofficially modified build of Slimefun!");
-            plugin.getLogger().log(Level.WARNING, "GitHub release checks are enabled for this unofficial build.");
-            plugin.getLogger().log(Level.WARNING, "When a newer release is found it will be downloaded for the next restart.");
-            plugin.getLogger().log(Level.WARNING, "Do not report bugs encountered in this Version of Slimefun to any official sources.");
-            printBorder();
-            checkCustomReleaseAsync();
+            return;
         }
+
+        printBorder();
+        plugin.getLogger().log(Level.WARNING, "It looks like you are using an unofficially modified build of Slimefun!");
+        plugin.getLogger().log(Level.WARNING, "Modrinth release checks are enabled for this unofficial build.");
+        plugin.getLogger().log(Level.WARNING, "Project: {0}", getModrinthProject());
+        plugin.getLogger().log(Level.WARNING, "Auto-download updates: {0}", isAutoDownloadEnabled() ? "enabled" : "disabled");
+        plugin.getLogger().log(Level.WARNING, "Do not report bugs encountered in this Version of Slimefun to any official sources.");
+        printBorder();
+
+        checkUnofficialReleaseAsync();
     }
 
-    /**
-     * This returns whether the {@link PluginUpdater} is enabled or not.
-     * This includes the {@link Config} setting but also whether or not we are running an
-     * official or unofficial build.
-     *
-     * @return Whether the {@link PluginUpdater} is enabled
-     */
     public boolean isEnabled() {
         return Slimefun.getCfg().getBoolean("options.auto-update");
     }
 
-    /**
-     * This method is called when the {@link UpdaterService} was disabled.
-     */
     public void disable() {
         printBorder();
-        plugin.getLogger().log(Level.WARNING, "It looks like you have disabled auto-updates for Slimefun!");
-        plugin.getLogger().log(Level.WARNING, "Auto-Updates keep your server safe, performant and bug-free.");
+        plugin.getLogger().log(Level.WARNING, "It looks like you have disabled update checks for Slimefun!");
+        plugin.getLogger().log(Level.WARNING, "Update checks help you stay current with fixes and releases.");
         plugin.getLogger().log(Level.WARNING, "We respect your decision.");
 
         if (branch != SlimefunBranch.STABLE) {
-            plugin.getLogger().log(Level.WARNING, "If you are just scared of Slimefun breaking, then please consider using a \"stable\" build instead of disabling auto-updates.");
+            plugin.getLogger().log(Level.WARNING, "If you are just scared of Slimefun breaking, then please consider using a \"stable\" build instead of disabling update checks.");
         }
 
         printBorder();
@@ -212,55 +171,121 @@ public class UpdaterService {
         plugin.getLogger().log(Level.WARNING, "#######################################################");
     }
 
-    /**
-     * Compatibility note: unofficial builds now check the custom GitHub repository
-     * and stage the newest jar in the server update folder for the next restart.
-     */
-    private void checkCustomReleaseAsync() {
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, this::checkCustomRelease);
+    private void checkUnofficialReleaseAsync() {
+        Slimefun.getThreadService().newThread(plugin, "UpdaterService#startupCheck", () -> checkUnofficialRelease(true));
     }
 
-    private void checkCustomRelease() {
+    public void checkNow(@Nullable Consumer<UpdateStatus> callback) {
+        if (updater != null) {
+            UpdateStatus status = getStatus();
+
+            if (callback != null) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> callback.accept(status));
+            }
+
+            return;
+        }
+
+        Slimefun.getThreadService().newThread(plugin, "UpdaterService#checkNow", () -> {
+            checkUnofficialRelease(false);
+            UpdateStatus status = getStatus();
+
+            if (callback != null) {
+                plugin.getServer().getScheduler().runTask(plugin, () -> callback.accept(status));
+            }
+        });
+    }
+
+    public @Nonnull UpdateStatus getStatus() {
+        Integer currentBuild = parseBuildNumber(pluginFile.getName());
+        Integer latestBuild = latestRelease != null ? latestRelease.buildNumber() : null;
+        boolean unofficialUpdateAvailable = currentBuild != null && latestBuild != null && latestBuild > currentBuild;
+
+        String currentVersion = branch == SlimefunBranch.UNOFFICIAL ? pluginFile.getName() : String.valueOf(getBuildNumber());
+        String latestVersion = branch == SlimefunBranch.UNOFFICIAL
+            ? latestRelease != null ? latestRelease.versionNumber() : null
+            : getLatestVersion() == -1 ? null : String.valueOf(getLatestVersion());
+
+        boolean updateAvailable = branch == SlimefunBranch.UNOFFICIAL
+            ? unofficialUpdateAvailable
+            : (getBuildNumber() != -1 && getLatestVersion() != -1 && getLatestVersion() > getBuildNumber());
+
+        return new UpdateStatus(
+            branch,
+            isEnabled(),
+            isAutoDownloadEnabled(),
+            lastCheckCompleted || updater != null,
+            updateAvailable,
+            currentVersion,
+            latestVersion,
+            latestRelease != null ? latestRelease.assetName() : null,
+            latestRelease != null ? latestRelease.projectUrl() : null,
+            lastCheckError
+        );
+    }
+
+    private void checkUnofficialRelease(boolean announceToConsole) {
         try {
-            ReleaseInfo latestRelease = fetchLatestCustomRelease();
+            ReleaseInfo latestRelease = fetchLatestModrinthRelease();
+            this.latestRelease = latestRelease;
+            this.lastCheckCompleted = true;
+            this.lastCheckError = null;
             Integer currentBuild = parseBuildNumber(pluginFile.getName());
 
             if (latestRelease == null) {
-                plugin.getLogger().log(Level.INFO, "Could not determine the latest GitHub release for this unofficial SlimefunCore build.");
+                if (announceToConsole) {
+                    plugin.getLogger().log(Level.INFO, "Could not determine the latest Modrinth release for project \"{0}\".", getModrinthProject());
+                }
                 return;
             }
 
             if (currentBuild == null || latestRelease.buildNumber() == null) {
-                plugin.getLogger().log(Level.INFO, "Could not compare build numbers for automatic updates.");
-                plugin.getLogger().log(Level.INFO, "Current jar: {0}", pluginFile.getName());
-                plugin.getLogger().log(Level.INFO, "Latest GitHub release tag: {0}", latestRelease.tag());
-                plugin.getLogger().log(Level.INFO, "Latest GitHub release: {0}", latestRelease.url());
+                if (announceToConsole) {
+                    plugin.getLogger().log(Level.INFO, "Could not compare build numbers for automatic updates.");
+                    plugin.getLogger().log(Level.INFO, "Current jar: {0}", pluginFile.getName());
+                    plugin.getLogger().log(Level.INFO, "Latest Modrinth version: {0}", latestRelease.versionNumber());
+                    plugin.getLogger().log(Level.INFO, "Project page: {0}", latestRelease.projectUrl());
+                }
                 return;
             }
 
             if (latestRelease.buildNumber() > currentBuild) {
-                printBorder();
-                plugin.getLogger().log(Level.WARNING, "A newer SlimefunCore release is available on GitHub.");
-                plugin.getLogger().log(Level.WARNING, "Current build: {0}", pluginFile.getName());
-                plugin.getLogger().log(Level.WARNING, "Latest asset: {0}", latestRelease.assetName());
-                plugin.getLogger().log(Level.WARNING, "Latest tag: {0}", latestRelease.tag());
-                plugin.getLogger().log(Level.WARNING, "Published: {0}", latestRelease.publishedAt());
-                plugin.getLogger().log(Level.WARNING, "Download: {0}", latestRelease.url());
-
-                if (downloadLatestRelease(latestRelease)) {
-                    plugin.getLogger().log(Level.WARNING, "The new jar was downloaded into the update folder and will apply on the next restart.");
+                if (announceToConsole) {
+                    printBorder();
+                    plugin.getLogger().log(Level.WARNING, "A newer SlimefunCore release is available on Modrinth.");
+                    plugin.getLogger().log(Level.WARNING, "Current build: {0}", pluginFile.getName());
+                    plugin.getLogger().log(Level.WARNING, "Latest asset: {0}", latestRelease.assetName());
+                    plugin.getLogger().log(Level.WARNING, "Latest version: {0}", latestRelease.versionNumber());
+                    plugin.getLogger().log(Level.WARNING, "Published: {0}", latestRelease.publishedAt());
+                    plugin.getLogger().log(Level.WARNING, "Project page: {0}", latestRelease.projectUrl());
                 }
 
-                printBorder();
+                if (isAutoDownloadEnabled()) {
+                    if (downloadLatestRelease(latestRelease) && announceToConsole) {
+                        plugin.getLogger().log(Level.WARNING, "The new jar was downloaded into the update folder and will apply on the next restart.");
+                    }
+                } else if (announceToConsole) {
+                    plugin.getLogger().log(Level.WARNING, "Auto-download is disabled. Enable options.auto-download-update to stage updates automatically.");
+                }
+
+                if (announceToConsole) {
+                    printBorder();
+                }
                 return;
             }
 
-            plugin.getLogger().log(Level.INFO, "SlimefunCore is already on the latest GitHub release.");
-            plugin.getLogger().log(Level.INFO, "Current build: {0}", pluginFile.getName());
-            plugin.getLogger().log(Level.INFO, "Latest asset: {0}", latestRelease.assetName());
-            plugin.getLogger().log(Level.INFO, "Latest tag: {0}", latestRelease.tag());
+            if (announceToConsole) {
+                plugin.getLogger().log(Level.INFO, "SlimefunCore is already on the latest Modrinth release.");
+                plugin.getLogger().log(Level.INFO, "Current build: {0}", pluginFile.getName());
+                plugin.getLogger().log(Level.INFO, "Latest asset: {0}", latestRelease.assetName());
+                plugin.getLogger().log(Level.INFO, "Latest version: {0}", latestRelease.versionNumber());
+            }
         } catch (IOException | InterruptedException x) {
-            plugin.getLogger().log(Level.WARNING, "Failed to check unofficial GitHub releases: " + x.getMessage());
+            this.lastCheckCompleted = true;
+            this.lastCheckError = x.getMessage();
+            if (announceToConsole) {
+                plugin.getLogger().log(Level.WARNING, "Failed to check unofficial Modrinth releases: " + x.getMessage());
+            }
 
             if (x instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -268,10 +293,10 @@ public class UpdaterService {
         }
     }
 
-    private @Nullable ReleaseInfo fetchLatestCustomRelease() throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(CUSTOM_RELEASES_LATEST)
+    private @Nullable ReleaseInfo fetchLatestModrinthRelease() throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder(createModrinthVersionUri())
             .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/vnd.github+json")
+            .header("Accept", "application/json")
             .GET()
             .build();
         HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -280,36 +305,71 @@ public class UpdaterService {
             return null;
         }
 
-        String body = response.body();
-        String tag = matchFirst(body, TAG_NAME_PATTERN);
-        String htmlUrl = matchFirst(body, HTML_URL_PATTERN);
-        String publishedAtRaw = matchFirst(body, PUBLISHED_AT_PATTERN);
-
-        if (tag == null || htmlUrl == null || publishedAtRaw == null) {
+        JsonArray versions = JsonUtils.parseString(response.body()).getAsJsonArray();
+        if (versions.isEmpty()) {
             return null;
         }
 
-        Matcher assetMatcher = ASSET_PATTERN.matcher(body);
-        String assetName = null;
-        String downloadUrl = null;
+        for (JsonElement element : versions) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
 
-        while (assetMatcher.find()) {
-            String candidateName = assetMatcher.group(1);
-            String candidateUrl = assetMatcher.group(2);
+            JsonObject version = element.getAsJsonObject();
+            String versionNumber = getAsString(version, "version_number");
+            String versionId = getAsString(version, "id");
+            String publishedAtRaw = getAsString(version, "date_published");
+            JsonArray files = version.has("files") && version.get("files").isJsonArray() ? version.getAsJsonArray("files") : null;
 
-            if (candidateName.startsWith("SlimefunCore4-") && candidateName.endsWith(".jar") && !candidateName.endsWith("-sources.jar")) {
-                assetName = candidateName;
-                downloadUrl = candidateUrl;
-                break;
+            if (versionNumber == null || versionId == null || publishedAtRaw == null || files == null) {
+                continue;
+            }
+
+            JsonObject selectedFile = selectModrinthJar(files);
+            if (selectedFile == null) {
+                continue;
+            }
+
+            String assetName = getAsString(selectedFile, "filename");
+            String downloadUrl = getAsString(selectedFile, "url");
+
+            if (assetName == null || downloadUrl == null) {
+                continue;
+            }
+
+            Integer buildNumber = parseBuildNumber(assetName);
+            String projectUrl = "https://modrinth.com/plugin/" + getModrinthProject() + "/version/" + versionId;
+            return new ReleaseInfo(versionNumber, projectUrl, Instant.parse(publishedAtRaw), assetName, downloadUrl, buildNumber);
+        }
+
+        return null;
+    }
+
+    private @Nullable JsonObject selectModrinthJar(@Nonnull JsonArray files) {
+        JsonObject fallback = null;
+
+        for (JsonElement fileElement : files) {
+            if (!fileElement.isJsonObject()) {
+                continue;
+            }
+
+            JsonObject file = fileElement.getAsJsonObject();
+            String fileName = getAsString(file, "filename");
+
+            if (fileName == null || !fileName.endsWith(".jar") || fileName.endsWith("-sources.jar")) {
+                continue;
+            }
+
+            if (file.has("primary") && file.get("primary").getAsBoolean()) {
+                return file;
+            }
+
+            if (fallback == null) {
+                fallback = file;
             }
         }
 
-        if (assetName == null || downloadUrl == null) {
-            return null;
-        }
-
-        Integer buildNumber = parseBuildNumber(assetName);
-        return new ReleaseInfo(tag, htmlUrl, Instant.parse(publishedAtRaw), assetName, downloadUrl, buildNumber);
+        return fallback;
     }
 
     private @Nullable Integer parseBuildNumber(@Nonnull String fileName) {
@@ -326,9 +386,49 @@ public class UpdaterService {
         }
     }
 
-    private @Nullable String matchFirst(@Nonnull String input, @Nonnull Pattern pattern) {
-        Matcher matcher = pattern.matcher(input);
-        return matcher.find() ? matcher.group(1) : null;
+    private @Nullable String getAsString(@Nonnull JsonObject object, @Nonnull String key) {
+        if (!object.has(key) || object.get(key).isJsonNull()) {
+            return null;
+        }
+
+        return object.get(key).getAsString();
+    }
+
+    private @Nonnull URI createModrinthVersionUri() {
+        String project = getModrinthProject();
+        String gameVersions = encodeJsonArray(getCurrentGameVersion());
+        String loaders = encodeJsonArray("paper", "purpur", "spigot", "bukkit");
+        return URI.create(String.format(MODRINTH_VERSION_ENDPOINT, project, gameVersions, loaders));
+    }
+
+    private @Nonnull String encodeJsonArray(@Nonnull String... values) {
+        StringBuilder builder = new StringBuilder("[");
+
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+
+            builder.append('"').append(values[i]).append('"');
+        }
+
+        builder.append(']');
+        return URLEncoder.encode(builder.toString(), StandardCharsets.UTF_8);
+    }
+
+    private @Nonnull String getCurrentGameVersion() {
+        String bukkitVersion = plugin.getServer().getBukkitVersion();
+        int separator = bukkitVersion.indexOf('-');
+        return separator >= 0 ? bukkitVersion.substring(0, separator) : bukkitVersion;
+    }
+
+    private @Nonnull String getModrinthProject() {
+        String project = Slimefun.getCfg().getString("options.modrinth-project");
+        return project == null || project.isBlank() ? DEFAULT_MODRINTH_PROJECT : project.trim();
+    }
+
+    private boolean isAutoDownloadEnabled() {
+        return Slimefun.getCfg().getBoolean("options.auto-download-update");
     }
 
     private boolean downloadLatestRelease(@Nonnull ReleaseInfo latestRelease) {
@@ -341,8 +441,6 @@ public class UpdaterService {
             }
 
             Path target = updateFolder.toPath().resolve(latestRelease.assetName());
-
-            // Compatibility note: always download through a temporary file so a partial transfer never becomes the live update.
             Path temporary = Files.createTempFile(updateFolder.toPath(), "slimefun-update-", ".jar");
 
             try {
@@ -354,7 +452,7 @@ public class UpdaterService {
                 HttpResponse<Path> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofFile(temporary));
 
                 if (response.statusCode() >= 400) {
-                    plugin.getLogger().log(Level.WARNING, "Failed to download the latest GitHub release asset. Response code: {0}", response.statusCode());
+                    plugin.getLogger().log(Level.WARNING, "Failed to download the latest Modrinth release asset. Response code: {0}", response.statusCode());
                     Files.deleteIfExists(temporary);
                     return false;
                 }
@@ -365,7 +463,7 @@ public class UpdaterService {
                 Files.deleteIfExists(temporary);
             }
         } catch (IOException | InterruptedException x) {
-            plugin.getLogger().log(Level.WARNING, "Failed to download the latest unofficial GitHub release: " + x.getMessage());
+            plugin.getLogger().log(Level.WARNING, "Failed to download the latest unofficial Modrinth release: " + x.getMessage());
 
             if (x instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -375,6 +473,19 @@ public class UpdaterService {
         }
     }
 
-    private record ReleaseInfo(@Nonnull String tag, @Nonnull String url, @Nonnull Instant publishedAt, @Nonnull String assetName, @Nonnull String downloadUrl, @Nullable Integer buildNumber) {}
+    private record ReleaseInfo(@Nonnull String versionNumber, @Nonnull String projectUrl, @Nonnull Instant publishedAt,
+                               @Nonnull String assetName, @Nonnull String downloadUrl, @Nullable Integer buildNumber) {}
 
+    public record UpdateStatus(
+        @Nonnull SlimefunBranch branch,
+        boolean checksEnabled,
+        boolean autoDownloadEnabled,
+        boolean checked,
+        boolean updateAvailable,
+        @Nonnull String currentVersion,
+        @Nullable String latestVersion,
+        @Nullable String latestAsset,
+        @Nullable String projectUrl,
+        @Nullable String lastError
+    ) {}
 }

@@ -3,8 +3,10 @@ package io.github.thebusybiscuit.slimefun4.core.services;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import javax.annotation.ParametersAreNonnullByDefault;
 
@@ -52,6 +54,48 @@ public final class ThreadService {
             // This is a bit of a hack, but it's the only way to have the thread name be as desired
             Thread.currentThread().setName(plugin.getName() + " - " + name);
             runnable.run();
+        });
+    }
+
+    /**
+     * Executes a named asynchronous task and returns a {@link CompletableFuture} representing the result.
+     *
+     * @param plugin The {@link JavaPlugin} creating this task
+     * @param name The descriptive thread name suffix
+     * @param supplier The {@link Supplier} to execute
+     * @param <T> The result type
+     *
+     * @return A {@link CompletableFuture} completed with the supplier result
+     */
+    @ParametersAreNonnullByDefault
+    public <T> CompletableFuture<T> supplyFuture(JavaPlugin plugin, String name, Supplier<T> supplier) {
+        CompletableFuture<T> future = new CompletableFuture<>();
+        cachedPool.submit(() -> {
+            Thread.currentThread().setName(plugin.getName() + " - " + name);
+
+            try {
+                future.complete(supplier.get());
+            } catch (Throwable x) {
+                future.completeExceptionally(x);
+            }
+        });
+        return future;
+    }
+
+    /**
+     * Executes a named asynchronous task and returns a {@link CompletableFuture} for its completion.
+     *
+     * @param plugin The {@link JavaPlugin} creating this task
+     * @param name The descriptive thread name suffix
+     * @param runnable The {@link Runnable} to execute
+     *
+     * @return A {@link CompletableFuture} completed when the task finishes
+     */
+    @ParametersAreNonnullByDefault
+    public CompletableFuture<Void> runFuture(JavaPlugin plugin, String name, Runnable runnable) {
+        return supplyFuture(plugin, name, () -> {
+            runnable.run();
+            return null;
         });
     }
 

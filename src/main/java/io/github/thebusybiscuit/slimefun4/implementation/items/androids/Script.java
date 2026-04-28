@@ -151,7 +151,8 @@ public final class Script {
     @Nonnull
     private String getScriptRatingPercentage() {
         float percentage = getRating();
-        return NumberUtils.getColorFromPercentage(percentage) + String.valueOf(percentage) + ChatColor.WHITE + "% ";
+        float roundedPercentage = Math.round(percentage * 100.0F) / 100.0F;
+        return NumberUtils.getColorFromPercentage(roundedPercentage) + String.valueOf(roundedPercentage) + ChatColor.WHITE + "% ";
     }
 
     /**
@@ -190,7 +191,7 @@ public final class Script {
     public float getRating() {
         int positive = getUpvotes() + 1;
         int negative = getDownvotes();
-        return Math.round((positive / (float) (positive + negative)) * 100.0F) / 100.0F;
+        return Math.round((positive / (float) (positive + negative)) * 10000.0F) / 100.0F;
     }
 
     /**
@@ -223,7 +224,9 @@ public final class Script {
             loadScripts(scripts, AndroidType.NONE);
         }
 
-        Collections.sort(scripts, Comparator.comparingInt(script -> -script.getUpvotes() + 1 - script.getDownvotes()));
+        Collections.sort(scripts, Comparator.comparingDouble(Script::getRating).reversed()
+            .thenComparing(Comparator.comparingInt(Script::getUpvotes).reversed())
+            .thenComparing(Comparator.comparingInt(Script::getDownloads).reversed()));
         return scripts;
     }
 
@@ -233,7 +236,13 @@ public final class Script {
             directory.mkdirs();
         }
 
-        for (File file : directory.listFiles()) {
+        File[] files = directory.listFiles();
+        if (files == null) {
+            Slimefun.logger().log(Level.WARNING, "Could not list Android script directory: {0}", directory.getAbsolutePath());
+            return;
+        }
+
+        for (File file : files) {
             if (file.getName().endsWith(".sfs")) {
                 try {
                     Config config = new Config(file);
